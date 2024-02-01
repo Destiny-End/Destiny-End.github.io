@@ -1,0 +1,879 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/icon.png">
+  <link rel="icon" href="/img/icon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#2f4154">
+  <meta name="author" content="Pigeon.🕊">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="起因在配置好HomeAssistant后，我发现在管理界面，它只需要在浏览器输入http:&#x2F;&#x2F;homeassistant:8123 就可以访问到HA的管理界面。根据之前折腾路由器的经验，这域名应该在路由器中的DNS记录了才可被解析呀，身为一个局域网设备，它是怎么能将自己的DNS解析发布出来的呢？它又不可能直接修改路由器中的DNS表。于是我抓了下局域网的包，分析下这个协议的工作过程。 抓包">
+<meta property="og:type" content="article">
+<meta property="og:title" content="HA探究篇-mDNS分析">
+<meta property="og:url" content="http://blog.jiuge.host/post/20230724174319.html">
+<meta property="og:site_name" content="Pigeon&#39;s BLOG">
+<meta property="og:description" content="起因在配置好HomeAssistant后，我发现在管理界面，它只需要在浏览器输入http:&#x2F;&#x2F;homeassistant:8123 就可以访问到HA的管理界面。根据之前折腾路由器的经验，这域名应该在路由器中的DNS记录了才可被解析呀，身为一个局域网设备，它是怎么能将自己的DNS解析发布出来的呢？它又不可能直接修改路由器中的DNS表。于是我抓了下局域网的包，分析下这个协议的工作过程。 抓包">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://raw.githubusercontent.com/Destiny-End/images/master/202312301251428.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/Destiny-End/images/master/202312301251345.png">
+<meta property="article:published_time" content="2023-07-24T17:43:19.000Z">
+<meta property="article:modified_time" content="2023-07-24T17:43:19.000Z">
+<meta property="article:author" content="Pigeon">
+<meta property="article:tag" content="路由器">
+<meta property="article:tag" content="HA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/Destiny-End/images/master/202312301251428.png">
+  
+  
+    <meta name="referrer" content="no-referrer-when-downgrade">
+  
+  
+  <title>HA探究篇-mDNS分析 - Pigeon&#39;s BLOG</title>
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/twitter-bootstrap/4.6.1/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/github-markdown-css/4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/hint.css/2.7.0/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/fancybox/3.5.7/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_hj8rtnfg7um.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_lbnruvf0jn.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+  
+<link rel="stylesheet" href="/diy/css/code.css">
+<link rel="stylesheet" href="//cdn.jsdelivr.net/gh/EmoryHuang/BlogBeautify@1.1/scroll.css">
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"blog.jiuge.host","root":"/","version":"1.9.5","typing":{"enable":true,"typeSpeed":50,"cursorChar":"||","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"hover","icon":""},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":{"measurement_id":null},"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false}},"search_path":"/local-search.xml","include_content_in_search":true};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 7.0.0"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 40vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Pigeon</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/categories/" target="_self">
+                <i class="iconfont icon-category-fill"></i>
+                <span>分类</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/back2.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.6)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle" data-typed-text="HA探究篇-mDNS分析"></span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-author" aria-hidden="true"></i>
+        Pigeon.🕊
+      </span>
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2023-07-24 17:43" pubdate>
+          2023年7月24日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          3.5k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          44 分钟
+        
+      </span>
+    
+
+    
+    
+      
+        <span id="busuanzi_container_page_pv" style="display: none">
+          <i class="iconfont icon-eye" aria-hidden="true"></i>
+          <span id="busuanzi_value_page_pv"></span> 次
+        </span>
+        
+      
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">HA探究篇-mDNS分析</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <h2 id="起因"><a href="#起因" class="headerlink" title="起因"></a>起因</h2><p>在配置好<code>HomeAssistant</code>后，我发现在管理界面，它只需要在浏览器输入<code>http://homeassistant:8123</code> 就可以访问到HA的管理界面。根据之前折腾路由器的经验，这域名应该在路由器中的DNS记录了才可被解析呀，身为一个局域网设备，它是怎么能将自己的DNS解析发布出来的呢？它又不可能直接修改路由器中的DNS表。于是我抓了下局域网的包，分析下这个协议的工作过程。</p>
+<h2 id="抓包"><a href="#抓包" class="headerlink" title="抓包"></a>抓包</h2><div class="note note-warning">
+            <blockquote><p>我的主机在192.168.1.10，HA服务器在192.168.1.123    </p></blockquote>
+          </div>    
+
+
+<table>
+<thead>
+<tr>
+<th align="center">“No.”</th>
+<th align="center">“Time”</th>
+<th align="center">“Source”</th>
+<th align="center">“Destination”</th>
+<th align="center">“Protocol”</th>
+<th align="center">“Length”</th>
+<th align="center">“Info”</th>
+<th align="center"></th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">“198”</td>
+<td align="center">“3.678602”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“223.5.5.5”</td>
+<td align="center">“DNS”</td>
+<td align="center">“86”</td>
+<td align="center">“Standard query 0x2131 HTTPS _8123._https.homeassistant”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“199”</td>
+<td align="center">“3.678611”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“223.5.5.5”</td>
+<td align="center">“DNS”</td>
+<td align="center">“86”</td>
+<td align="center">“Standard query 0x2131 HTTPS _8123._https.homeassistant”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“200”</td>
+<td align="center">“3.679403”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“192.168.1.255”</td>
+<td align="center">“NBNS”</td>
+<td align="center">“92”</td>
+<td align="center">“Name query NB HOMEASSISTANT&lt;00&gt;”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“201”</td>
+<td align="center">“3.679410”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“192.168.1.255”</td>
+<td align="center">“NBNS”</td>
+<td align="center">“92”</td>
+<td align="center">“Name query NB HOMEASSISTANT&lt;00&gt;”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“202”</td>
+<td align="center">“3.681246”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“224.0.0.251”</td>
+<td align="center">“MDNS”</td>
+<td align="center">“79”</td>
+<td align="center">“Standard query 0x0000 A homeassistant.local</td>
+<td align="center">“QM” question”</td>
+</tr>
+<tr>
+<td align="center">“203”</td>
+<td align="center">“3.681254”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“224.0.0.251”</td>
+<td align="center">“MDNS”</td>
+<td align="center">“79”</td>
+<td align="center">“Standard query 0x0000 A homeassistant.local</td>
+<td align="center">“QM” question”</td>
+</tr>
+<tr>
+<td align="center">“204”</td>
+<td align="center">“3.681703”</td>
+<td align="center">“192.168.1.123”</td>
+<td align="center">“224.0.0.251”</td>
+<td align="center">“MDNS”</td>
+<td align="center">“89”</td>
+<td align="center">“Standard query response 0x0000 A, cache flush 192.168.1.123”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“205”</td>
+<td align="center">“3.681711”</td>
+<td align="center">“192.168.1.123”</td>
+<td align="center">“224.0.0.251”</td>
+<td align="center">“MDNS”</td>
+<td align="center">“89”</td>
+<td align="center">“Standard query response 0x0000 A, cache flush 192.168.1.123”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“212”</td>
+<td align="center">“3.684134”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“224.0.0.252”</td>
+<td align="center">“LLMNR”</td>
+<td align="center">“73”</td>
+<td align="center">“Standard query 0x64d7 A homeassistant”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“213”</td>
+<td align="center">“3.684138”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“224.0.0.252”</td>
+<td align="center">“LLMNR”</td>
+<td align="center">“73”</td>
+<td align="center">“Standard query 0x64d7 A homeassistant”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“234”</td>
+<td align="center">“3.685123”</td>
+<td align="center">“192.168.1.123”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“LLMNR”</td>
+<td align="center">“89”</td>
+<td align="center">“Standard query response 0x64d7 A homeassistant A 192.168.1.123”</td>
+<td align="center"></td>
+</tr>
+<tr>
+<td align="center">“235”</td>
+<td align="center">“3.685127”</td>
+<td align="center">“192.168.1.123”</td>
+<td align="center">“192.168.1.10”</td>
+<td align="center">“LLMNR”</td>
+<td align="center">“89”</td>
+<td align="center">“Standard query response 0x64d7 A homeassistant A 192.168.1.123”</td>
+<td align="center"></td>
+</tr>
+</tbody></table>
+<h2 id="分析"><a href="#分析" class="headerlink" title="分析"></a>分析</h2><p>可以看到，当我的主机输入<code>http://homeassistant:8123</code>地址时，电脑自动给<code>223.5.5.5</code>(这是阿里DNS的地址)、<code>192.168.1.255</code>、<code>224.0.0.251</code>和<code>224.0.0.252</code>，这四个地址发送数据包，让它们试图解析这个域名。<br>其中的前两个地址不是关心的重点。一个是公共DNS，一个是NBNS（NetBIOS Name Service）。重点看第三个地址，注意到它的协议是mDNS。  </p>
+<h3 id="mDNS"><a href="#mDNS" class="headerlink" title="mDNS"></a>mDNS</h3><p>根据查到的资料：</p>
+<div class="note note-primary">
+            <p>mDNS（Multicast DNS）是一种基于组播的协议，用于在局域网内解析本地主机名和 IP 地址之间的映射关系。mDNS 协议是 Zero Configuration Networking（Zeroconf）技术的一部分，它允许设备在不需要任何配置的情况下自动发现和连接到网络上的其他设备。  </p><blockquote><p>mDNS 协议的工作原理如下：</p></blockquote><ol><li>主机发送查询请求：当主机需要解析另一个主机的主机名时，它将向组播地址 224.0.0.251 发送一个查询请求。查询请求中包含了需要解析的主机名和查询请求的 ID。  </li><li>局域网内的所有主机都收到查询请求：局域网内的所有主机都会收到查询请求，但只有那些已经注册了与查询请求匹配的主机名的主机才会作出响应。  </li><li>主机作出响应：如果一个主机已经注册了与查询请求匹配的主机名，它将向查询请求的源主机发送一个响应。响应中包含了主机名、IP 地址和查询请求的 ID。  </li><li>源主机收到响应：当源主机收到响应时，它将使用响应中包含的 IP 地址来建立与目标主机的连接。</li></ol><p>需要注意的是，mDNS 协议只能在同一局域网内使用，因为它使用的是组播地址和局域网广播。另外，mDNS 协议不需要任何中央服务器或域名系统的支持，因此它非常适合用于小型网络或临时网络，例如家庭网络、会议室网络或 Wi-Fi 热点。</p>
+          </div>
+
+<p>可以明确知道，HA正是用了mDNS协议，实现了域名解析。而我的计算机查找域名的过程，是从公共DNS出发，再查找本地NBNS，之后查找mDNS，最后查找LLMNR。这和我的网络配置相符合，我自定义了DNS服务器，使它指向<code>223.5.5.5</code>，所以它跳过了查找本地DNS服务器的过程，而是直接向阿里DNS发送请求。</p>
+<h3 id="本地数据包分析"><a href="#本地数据包分析" class="headerlink" title="本地数据包分析"></a>本地数据包分析</h3><p><img src="https://raw.githubusercontent.com/Destiny-End/images/master/202312301251428.png" srcset="/img/loading.gif" lazyload alt="host请求"></p>
+<p>回到mDNS，如上图，主机向组播地址<code>224.0.0.251</code>，这个mDNS协议组播地址发出DNS请求，问：“<code>homeassistant.local</code>在哪个地址呀？”<br><img src="https://raw.githubusercontent.com/Destiny-End/images/master/202312301251345.png" srcset="/img/loading.gif" lazyload alt="HA回应"></p>
+<p>之后，HA的服务器便回复了：“<code>homeassistant.local</code>在地址<code>192.168.1.123</code>”<br>这样，便完成了一次域名解析过程。而我的主机也会将这个地址记录下来，直到DNS刷新或者是DNS记录值过期。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>其实mDNS和DNS还是很相似的，都是向某个地址发请求，等待回应，保存DNS解析记录。不过由于mDNS用的是组播地址，它便可以不需要服务器就可完成解析。只要服务端存活，服务端收到来自组播的信息，就会发出回应。这样做的好处很明显了，可以在配置完成后，在局域网内输入域名，即可自动获取到服务器的IP，免去了人工查找服务端IP地址的过程。  </p>
+<p>最后来段ChatGPT总结的优缺点吧。  </p>
+<div class="note note-success">
+            <p>多播 DNS（mDNS）协议是一种在局域网（LAN）中进行 DNS 解析和服务发现的协议。以下是 mDNS 协议的优点和缺点：</p><blockquote><p>优点：<br>简化网络配置：mDNS 协议可以让设备自动发现和连接其他设备，无需手动配置 DNS 服务器或 DHCP 服务器。这使得网络更加易于部署和管理，并且可以减少网络故障的可能性。<br>提高网络可靠性：mDNS 协议使用多播地址来广播 DNS 查询和回复消息，这可以减少网络负载并提高网络响应速度。此外，mDNS 协议在没有 DNS 服务器的情况下仍然可以工作，因此即使网络中出现故障，设备和服务也可以继续通信。<br>支持零配置网络：mDNS 协议是支持零配置网络（Zero Configuration Networking，Zeroconf）的重要组成部分。Zeroconf 技术可以帮助设备自动配置网络，并使其可以在没有中央服务器的情况下发现和连接其他设备。  </p></blockquote><blockquote><p>缺点：<br>安全性问题：mDNS 协议的广播特性可以使网络中的任何设备都可以看到其他设备和服务。这可能会导致安全隐患，例如未经授权的设备可以访问网络上的其他设备和服务。<br>可扩展性问题：由于 mDNS 协议使用广播消息，因此在大型网络中使用可能会导致网络负载过高，从而降低网络性能和可扩展性。<br>兼容性问题：不是所有的设备和服务都支持 mDNS 协议。这可能会导致在某些情况下，设备和服务无法相互通信或无法正确工作。</p></blockquote>
+          </div>
+
+<p>不难看出，它的优势很明显，可以简化网络配置，简化网络结构，自然提高了稳定性。劣势则是兼容性和安全性问题，很容易受到中间人攻击，劫持DNS来截获一些私密信息。但在有一定安全性的局域网内，mDNS对HA则是很合适了。我还注意到它还支持LLMNR协议，可以说开发组的考虑很周到了。</p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+    <div class="post-meta mr-3 d-flex align-items-center">
+      <i class="iconfont icon-category"></i>
+      
+
+<span class="category-chains">
+  
+  
+    
+      <span class="category-chain">
+        
+  <a href="/categories/linux%E8%BF%90%E7%BB%B4/" class="category-chain-item">linux运维</a>
+  
+  
+
+      </span>
+    
+  
+</span>
+
+    </div>
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/%E8%B7%AF%E7%94%B1%E5%99%A8/" class="print-no-link">#路由器</a>
+      
+        <a href="/tags/HA/" class="print-no-link">#HA</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>HA探究篇-mDNS分析</div>
+      <div>http://blog.jiuge.host/post/20230724174319.html</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Pigeon.🕊</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2023年7月24日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              CC BY-NC-SA 3.0
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/post/20231126125907.html" title="Anaconda命令">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Anaconda命令</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/post/20230723115242.html" title="github工作流自动完成hexo部署">
+                        <span class="hidden-mobile">github工作流自动完成hexo部署</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+  
+  
+    <article id="comments" lazyload>
+      
+  <div id="gitalk-container"></div>
+  <script type="text/javascript">
+    Fluid.utils.loadComments('#gitalk-container', function() {
+      Fluid.utils.createCssLink('/css/gitalk.css')
+      Fluid.utils.createScript('https://lib.baomitu.com/gitalk/1.8.0/gitalk.min.js', function() {
+        var options = Object.assign(
+          {"clientID":"810f41c51d5920876295","clientSecret":"66c90f0d4a594fa038a2a8a172c08a052c83bd71","repo":"Blog_Comment","owner":"Destiny-End","admin":["Destiny-End"],"language":"zh-CN","labels":["Gitalk"],"perPage":10,"pagerDirection":"last","distractionFreeMode":true,"createIssueManually":true,"proxy":"https://cors-anywhere.azm.workers.dev/https://github.com/login/oauth/access_token"},
+          {
+            id: 'f0605de5f99248eae102905b304a6284'
+          }
+        )
+        var gitalk = new Gitalk(options);
+        gitalk.render('gitalk-container');
+      });
+    });
+  </script>
+  <noscript>Please enable JavaScript to view the comments</noscript>
+
+
+    </article>
+  
+
+
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> <div>Pigeon的博客 | 学习~</div> 
+    </div>
+  
+  
+    <div class="statistics">
+  
+  
+
+  
+    
+      <span id="busuanzi_container_site_pv" style="display: none">
+        总访问量 
+        <span id="busuanzi_value_site_pv"></span>
+         次
+      </span>
+    
+    
+      <span id="busuanzi_container_site_uv" style="display: none">
+        总访客数 
+        <span id="busuanzi_value_site_uv"></span>
+         人
+      </span>
+    
+    
+  
+</div>
+
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://lib.baomitu.com/nprogress/0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://lib.baomitu.com/nprogress/0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://lib.baomitu.com/jquery/3.6.4/jquery.min.js" ></script>
+<script  src="https://lib.baomitu.com/twitter-bootstrap/4.6.1/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+  <script  src="https://lib.baomitu.com/typed.js/2.0.12/typed.min.js" ></script>
+  <script>
+    (function (window, document) {
+      var typing = Fluid.plugins.typing;
+      var subtitle = document.getElementById('subtitle');
+      if (!subtitle || !typing) {
+        return;
+      }
+      var text = subtitle.getAttribute('data-typed-text');
+      
+        typing(text);
+      
+    })(window, document);
+  </script>
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://lib.baomitu.com/tocbot/4.20.1/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://lib.baomitu.com/clipboard.js/2.0.11/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://lib.baomitu.com/anchor-js/4.3.1/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://lib.baomitu.com/fancybox/3.5.7/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+  <script defer src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" ></script>
+
+
+
+
+  
+<script src="//cdn.jsdelivr.net/gh/EmoryHuang/BlogBeautify@1.1/DynamicRibbon.min.js"></script>
+<script src="//cdn.jsdelivr.net/gh/EmoryHuang/BlogBeautify@1.1/love.min.js"></script>
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>
